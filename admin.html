@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Aurora Admin</title>
+<style>
+body { font-family: system-ui, sans-serif; background: #0f1420; color: #fff; margin: 0; padding: 20px; }
+h1 { color: #38bdf8; }
+.card { background: #1a2030; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+button { background: #3b82f6; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; margin-right: 8px; }
+button.danger { background: #ef4444; }
+button.success { background: #22c55e; }
+button.small { padding: 6px 12px; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { padding: 10px; text-align: left; border-bottom: 1px solid #2a3448; font-size: 13px; }
+th { color: #94a3b8; text-transform: uppercase; font-size: 11px; }
+.status { font-weight: 700; padding: 4px 10px; border-radius: 6px; }
+.status.active { background: #14532d; color: #4ade80; }
+.status.blocked { background: #450a0a; color: #f87171; }
+.global { display: flex; gap: 10px; align-items: center; margin: 10px 0; }
+.badge { padding: 6px 14px; border-radius: 8px; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>🔧 Aurora Admin Panel</h1>
+
+<div class="card">
+  <div class="global">
+    <span>Global Status:</span>
+    <span id="globalStatus" class="badge">...</span>
+  </div>
+  <button class="danger" onclick="setGlobal('REVOKED')">🔴 Block Everyone</button>
+  <button class="success" onclick="setGlobal('APPROVED')">✅ Unblock Everyone</button>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Users</h3>
+  <button onclick="load()">🔄 Refresh</button>
+  <table id="userTable">
+    <thead><tr><th>User ID</th><th>Browser</th><th>OS</th><th>Last Seen</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+const ENDPOINT = "https://script.google.com/macros/s/AKfycbwP6i5wZgUDOpuGFD0GsIU9mB0hCED0wsObXvuP982wJDMXPL1RgWDe2XEVEEz6jcAs/exec";
+const ADMIN_KEY = "alphacom-secret-key-2026";
+
+async function api(payload) {
+  const res = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ adminKey: ADMIN_KEY, ...payload })
+  });
+  return res.json();
+}
+
+async function load() {
+  document.getElementById('globalStatus').textContent = '...';
+  const d = await api({ action: 'getState' });
+  if (!d.ok) return;
+
+  const st = document.getElementById('globalStatus');
+  st.textContent = d.status;
+  st.style.background = d.status === 'APPROVED' ? '#14532d' : '#450a0a';
+  st.style.color = d.status === 'APPROVED' ? '#4ade80' : '#f87171';
+
+  const tbody = document.querySelector('#userTable tbody');
+  tbody.innerHTML = '';
+  d.users.sort((a, b) => (a.uid > b.uid ? 1 : -1));
+  d.users.forEach(u => {
+    const blocked = d.blocked.includes(u.uid);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${u.uid}</td>
+      <td>${u.browser}</td>
+      <td>${u.os}</td>
+      <td>${u.lastSeen}</td>
+      <td><span class="status ${blocked ? 'blocked' : 'active'}">${blocked ? 'BLOCKED' : 'ACTIVE'}</span></td>
+      <td>
+        <button class="small ${blocked ? 'success' : 'danger'}"
+                onclick="toggleUser('${u.uid}', ${blocked})">
+          ${blocked ? 'Unblock' : 'Block'}
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function setGlobal(status) {
+  if (!confirm('Set global status to ' + status + '?')) return;
+  await api({ action: 'setStatus', status });
+  load();
+}
+
+async function toggleUser(uid, currentlyBlocked) {
+  const d = await api({ action: 'getState' });
+  let blocked = d.blocked || [];
+  if (currentlyBlocked) blocked = blocked.filter(x => x !== uid);
+  else if (!blocked.includes(uid)) blocked.push(uid);
+  await api({ action: 'setBlocked', blocked });
+  load();
+}
+
+load();
+</script>
+</body>
+</html>
